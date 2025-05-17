@@ -1,0 +1,85 @@
+Bootstrap: docker
+From: ubuntu
+
+%environment
+    export DEBIAN_FRONTEND=noninteractive
+    export MATLAB_ROOT=/net/software/matlab
+    export VENV_PATH=$MATLAB_ROOT/venv
+    export PATH=$VENV_PATH/bin:$MATLAB_ROOT/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    export JUPYTER_PATH=$MATLAB_ROOT/share/jupyter
+    export MLM_LICENSE_FILE=27000@mlcls2025.lic.uw.edu
+    export DISPLAY=:1
+    export TMPDIR=$MATLAB_ROOT/tmp
+
+%post
+    echo ">>> Setting up build environment variables..."
+    export DEBIAN_FRONTEND=noninteractive
+    export MATLAB_ROOT=/net/software/matlab
+    export VENV_PATH=$MATLAB_ROOT/venv
+    export TMPDIR=$MATLAB_ROOT/tmp
+
+mkdir -p $TMPDIR
+apt-get update && apt-get install -y \
+    curl unzip git wget gnupg2 ca-certificates \
+    build-essential python3 python3-pip python3-venv \
+    libx11-6 libxt6 libxext6 libxmu6 libxpm-dev libglu1-mesa libxi6 \
+    xvfb x11-utils fluxbox xterm tigervnc-standalone-server \
+    || echo "Initial install failed"
+
+# Attempt recovery steps
+apt-get install -f -y || echo "Forcing fix for broken packages"
+dpkg --configure -a || echo "Trying to reconfigure broken packages"
+
+    
+    echo ">>> Creating Python virtual environment at $VENV_PATH ..."
+    python3 -m venv $VENV_PATH
+
+    echo ">>> Upgrading pip and installing JupyterLab inside venv..."
+    $VENV_PATH/bin/pip install --upgrade pip
+    $VENV_PATH/bin/pip install notebook jupyterlab
+
+    echo ">>> Installing MATLAB using MPM into $MATLAB_ROOT ..."
+    mkdir -p $MATLAB_ROOT/tmp
+
+    # Download and run MPM
+    curl -L -o $MATLAB_ROOT/mpm https://www.mathworks.com/mpm/glnxa64/mpm
+    chmod +x $MATLAB_ROOT/mpm
+
+    TMPDIR=$TMPDIR $MATLAB_ROOT/mpm install \
+        --release R2024b \
+        --destination $MATLAB_ROOT \
+        --products MATLAB \
+        || (echo "MPM install failed"; cat /tmp/mathworks_root.log || true; false)
+
+#    echo ">>> Installing jupyter-matlab-proxy inside venv..."
+#    # Add Node.js bin to venv PATH
+#    ln -s $VENV_PATH/node/bin/node $VENV_PATH/bin/node
+#    ln -s $VENV_PATH/node/bin/npm $VENV_PATH/bin/npm
+#    mkdir -p $MATLAB_ROOT/src
+#    git clone https://github.com/mathworks/jupyter-matlab-proxy.git $MATLAB_ROOT/src/jupyter-matlab-proxy
+#    cd $MATLAB_ROOT/src/jupyter-matlab-proxy
+
+#    $VENV_PATH/bin/pip install .
+
+#    echo ">>> Installing MATLAB kernel spec..."
+#    $VENV_PATH/bin/install-matlab-kernelspec --prefix=$MATLAB_ROOT
+
+echo ">>> Installing jupyter-matlab-proxy inside venv..."
+
+# Ensure node/npm are visible to build tools
+export PATH=$VENV_PATH/bin:/usr/bin:/usr/local/bin:$PATH
+
+mkdir -p $MATLAB_ROOT/src
+git clone https://github.com/mathworks/jupyter-matlab-proxy.git $MATLAB_ROOT/src/jupyter-matlab-proxy
+cd $MATLAB_ROOT/src/jupyter-matlab-proxy
+
+# Confirm node/npm visibility
+which node
+node --version
+which npm
+npm --version
+
+
+%runscript
+    echo ">>> Starting JupyterLab with MATLAB Proxy..."
+    jupyter lab --ip=0.0.0.0 --port=8888 --no-browser

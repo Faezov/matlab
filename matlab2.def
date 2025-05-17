@@ -1,0 +1,56 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%environment
+    export DEBIAN_FRONTEND=noninteractive
+    export DISPLAY=:1
+    export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/matlab/bin
+    export MLM_LICENSE_FILE=27000@mlcls2025.lic.uw.edu
+
+%post
+    echo ">>> Installing system dependencies..."
+    apt-get update && apt-get install -y \
+        curl unzip git wget gnupg2 \
+        python3 python3-pip \
+        build-essential \
+        libx11-6 libxt6 libxext6 libxmu6 libxpm-dev libglu1-mesa libxi6 \
+        xvfb x11-utils fluxbox xterm tigervnc-standalone-server ca-certificates
+
+    echo ">>> Installing Node.js and npm (LTS)..."
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+    apt-get install -y nodejs
+
+    echo ">>> Installing JupyterLab..."
+    pip3 install --upgrade pip
+    pip3 install notebook jupyterlab
+
+    echo ">>> Installing MATLAB using MPM..."
+    mkdir -p /opt/matlab
+    curl -L -o /usr/local/bin/mpm https://www.mathworks.com/mpm/glnxa64/mpm
+    chmod +x /usr/local/bin/mpm
+
+    mpm install \
+        --release R2024b \
+        --destination /opt/matlab \
+        --products MATLAB
+
+    echo ">>> Installing jupyter-matlab-proxy..."
+    git clone https://github.com/mathworks/jupyter-matlab-proxy.git /opt/jupyter-matlab-proxy
+    cd /opt/jupyter-matlab-proxy
+    pip3 install .
+
+    echo ">>> Installing MATLAB kernel spec for Jupyter..."
+    install-matlab-kernelspec
+
+%runscript
+    echo ">>> Launching Xvfb virtual display..."
+    Xvfb :1 -screen 0 1280x800x24 &
+
+    echo ">>> Starting JupyterLab with MATLAB Proxy..."
+    jupyter lab --ip=0.0.0.0 --port=8888 --no-browser
+
+%test
+    echo ">>> Verifying build..."
+    which Xvfb || echo "Xvfb not found!"
+    which matlab || echo "MATLAB not found!"
+    which jupyter || echo "Jupyter not found!"
